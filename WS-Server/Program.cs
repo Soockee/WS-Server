@@ -19,16 +19,25 @@ namespace WS_Server
     {
         public static void Main(string[] args)
         {
-            //FleckLog.Level = LogLevel.Debug;
+            // ServiceCollections holds the ILogger and Loggingfactory used by Jaeger
             var serviceCollection = new ServiceCollection();
             ConfigureServices(serviceCollection);
             var serviceProvider = serviceCollection.BuildServiceProvider();
             var logger = serviceProvider.GetService<ILogger<Server>>();
             var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            // jaeger tracer: Service name is used to identifiy the trace in the UI, loggerFactory as loggingframework
             var tracer = InitTracer("WS_Server", loggerFactory);
 
             Server server = new Server("ws://0.0.0.0:8181", ImageSelection.Earth, @"../../../images", 64, serviceProvider.GetService<ILogger<Server>>(), tracer);
 
+
+            /**
+             * Serverlogic:
+             *      ->OnOpen:
+             *          Adds opened socket to socketlist
+             *          Starts the task, which sis responsible for sending frames to the client
+             *          updates taskstatus
+            */
             server.WebSocketServer.Start(socket =>
             {
                 socket.OnOpen = () =>
@@ -67,12 +76,21 @@ namespace WS_Server
                 //input = Console.ReadLine();
             }
         }
-        
+        /**
+         * Configures the LoggingService. AddLogging is creating a ILogger and LoggerFactory Service
+         * which is used by the LoggingFramework and therefore Jaeger
+         */
         private static void ConfigureServices(IServiceCollection services)
         {
             services.AddLogging(configure => configure.AddConsole());
 
         }
+
+        /**
+         * Builds and returns a tracer with default configuration
+         * Source for InitTracer():  
+         * https://github.com/yurishkuro/opentracing-tutorial/tree/master/csharp/src/lesson01 
+         */
         private static Tracer InitTracer(string serviceName, ILoggerFactory loggerFactory)
         {
             var samplerConfiguration = new Configuration.SamplerConfiguration(loggerFactory)

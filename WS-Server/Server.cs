@@ -56,7 +56,9 @@ namespace WS_Server
             this._logger = logger;
             this._tracer = tracer;
         }
-        
+        /*
+         * handleOnMassage() handles userinput and acts accordingly
+         */
         public void handleOnMassage(IWebSocketConnection socket,String message) 
         {
             var span = _tracer.BuildSpan("handleOnMassage").Start();
@@ -93,6 +95,11 @@ namespace WS_Server
             Console.WriteLine(message);
             span.Finish();
         }
+
+        /*
+         * createSendDelayedFramesAction() returns an actions used by the task which iterates ONCE through the list of ImageData
+         * and sends the image in binaryformat over the wire 
+         */
         public Action createSendDelayedFramesAction() 
         {
             Action sendDelayedIamges = () => {
@@ -117,6 +124,10 @@ namespace WS_Server
             };
             return sendDelayedIamges;
         }
+
+        /*
+         * getSelectedImageList() Returns List of Imagedata based on Selection. imagesBaseURL is used as searchpath. imagesBaseURL is Runtimedependent
+         */
         private static List<ImageData> getSelectedImageList(ImageSelection selection, String imagesBaseURL) 
         {
             List<ImageData> list = new List<ImageData>();
@@ -141,6 +152,10 @@ namespace WS_Server
         { return taskCompleted; }
         public void setTaskCompleted(Boolean taskCompleted)
         { this.taskCompleted = taskCompleted; }
+
+        /*
+         *Getter And Setter Methods
+         */
         public Boolean IsTaskCompleted{  get { return taskCompleted; } set { taskCompleted = value; } }
         public WebSocketServer WebSocketServer { get { return webSocketServer; } }
         public List<IWebSocketConnection> AllSockets { get { return allSockets; } }
