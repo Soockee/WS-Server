@@ -1,6 +1,8 @@
 ﻿
 using Fleck;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.DependencyInjection;
 
 using System.Collections.Generic;
 using System.Collections;
@@ -23,76 +25,35 @@ namespace WS_Server
     {
         private int frameRate;
         private String imagesBaseURL = @"../../../images";
-        private ILogger<Server> _logger;
-        private WebSocketServer ws;
+        private readonly ILogger<Server> _logger;
+        private WebSocketServer webSocketServer;
         private List<IWebSocketConnection> allSockets;
+        private String address;
         private ImageSelection selection;
         private List<ImageData> allImages;
         private Task sendImage = null;
         private Boolean taskCompleted = false;
         private Boolean selectNewImages = false;
         private CancellationTokenSource source;
-        private CancellationToken token;
-
-        public Server(String address, ImageSelection selection, String imagesBaseURL, int frameRate ) 
+        private CancellationToken token;  
+        public Server(String address, ImageSelection selection, String imagesBaseURL,
+            int frameRate, ILogger<Server> logger) 
         {
             this.frameRate = frameRate;
             this.imagesBaseURL = imagesBaseURL;
-            this.ws = new WebSocketServer(address);
+            this.address = address;
+            this.webSocketServer = new WebSocketServer(this.address);
             this.allSockets = new List<IWebSocketConnection>();
             this.selection = selection;
             this.allImages = getSelectedImageList(selection, imagesBaseURL);
             this.source = new CancellationTokenSource();
             this.token = source.Token;
+            this._logger = logger;
         }
-        public static void Main()
+        
+        public void handleOnMassage(IWebSocketConnection socket,String message) 
         {
-            Server server = new Server("ws://0.0.0.0:8181", ImageSelection.Earth, @"../../../images",64);
-            //FleckLog.Level = LogLevel.Debug;
-
-
-            server.ws.Start(socket =>
-            {
-                socket.OnOpen = () =>
-                {
-                    Console.WriteLine("Open!");
-                    server.allSockets.Add(socket);
-                    if (server.sendImage == null) {
-                        server.sendImage = Task.Factory.StartNew(server.createSendDelayedFramesAction(), server.token, TaskCreationOptions.DenyChildAttach,
-                            TaskScheduler.Default);
-                        server.taskCompleted = server.sendImage.IsCompleted;
-                    }
-                };
-                socket.OnClose = () =>
-                {
-                    Console.WriteLine("Close!");
-                    server.allSockets.Remove(socket);
-                };
-                socket.OnMessage = message =>
-                {
-                    server.handleOnMassage(socket, message);
-                };
-            });
-
-            while (true)
-            {
-                if (server.allSockets.Count > 0 && server.taskCompleted) {
-                    server.sendImage = Task.Factory.StartNew(server.createSendDelayedFramesAction(), CancellationToken.None, TaskCreationOptions.DenyChildAttach,
-                        TaskScheduler.Default);
-                }
-                if (server.sendImage != null) {
-                    server.taskCompleted = server.sendImage.IsCompleted;
-                }
-                //input = Console.ReadLine();
-            }
-        }
-        private void initTracer() 
-        {
-        }
-
-
-        private void handleOnMassage(IWebSocketConnection socket,String message) 
-        {
+            _logger.LogInformation("Function: handleOnMassage(" + message+")");
             if (message.Equals("exit"))
             {
                 socket.Close();
@@ -124,7 +85,7 @@ namespace WS_Server
             }
             Console.WriteLine(message);
         }
-        private Action createSendDelayedFramesAction() 
+        public Action createSendDelayedFramesAction() 
         {
             Action sendDelayedIamges = () => {
                 var enm = this.allImages.GetEnumerator();
@@ -168,6 +129,15 @@ namespace WS_Server
             Directory.GetFiles(imagesBaseURL).ToList().ForEach(file => list.Add(new ImageData(Path.GetFileName(file), file)));
             return list;
         }
+        public Boolean isTaskCompleted() 
+        { return taskCompleted; }
+        public void setTaskCompleted(Boolean taskCompleted)
+        { this.taskCompleted = taskCompleted; }
+        public Boolean IsTaskCompleted{  get { return taskCompleted; } set { taskCompleted = value; } }
+        public WebSocketServer WebSocketServer { get { return webSocketServer; } }
+        public List<IWebSocketConnection> AllSockets { get { return allSockets; } }
+        public Task SendImage { get { return sendImage; } set { sendImage = value; } }
+        public CancellationToken Token { get { return token; } set { token = value; } }
 
     }
 }
