@@ -1,16 +1,19 @@
-﻿
-using Fleck;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
-using Microsoft.Extensions.DependencyInjection;
-
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Threading;
 using System.IO;
 using System;
+
+using Fleck;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.DependencyInjection;
+
+using OpenTracing.Util;
+
+
 
 
 namespace WS_Server
@@ -23,9 +26,11 @@ namespace WS_Server
     }
     class Server
     {
+        private readonly ILogger<Server> _logger;
+        private readonly OpenTracing.ITracer _tracer;
+
         private int frameRate;
         private String imagesBaseURL = @"../../../images";
-        private readonly ILogger<Server> _logger;
         private WebSocketServer webSocketServer;
         private List<IWebSocketConnection> allSockets;
         private String address;
@@ -35,10 +40,10 @@ namespace WS_Server
         private Boolean taskCompleted = false;
         private Boolean selectNewImages = false;
         private CancellationTokenSource source;
-        private CancellationToken token;  
+        private CancellationToken token;
         public Server(String address, ImageSelection selection, String imagesBaseURL,
-            int frameRate, ILogger<Server> logger) 
-        {
+            int frameRate, ILogger<Server> logger, OpenTracing.ITracer tracer) 
+        { 
             this.frameRate = frameRate;
             this.imagesBaseURL = imagesBaseURL;
             this.address = address;
@@ -49,10 +54,12 @@ namespace WS_Server
             this.source = new CancellationTokenSource();
             this.token = source.Token;
             this._logger = logger;
+            this._tracer = tracer;
         }
         
         public void handleOnMassage(IWebSocketConnection socket,String message) 
         {
+            var span = _tracer.BuildSpan("handleOnMassage").Start();
             _logger.LogInformation("Function: handleOnMassage(" + message+")");
             if (message.Equals("exit"))
             {
@@ -84,6 +91,7 @@ namespace WS_Server
 
             }
             Console.WriteLine(message);
+            span.Finish();
         }
         public Action createSendDelayedFramesAction() 
         {

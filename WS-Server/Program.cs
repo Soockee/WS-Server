@@ -5,9 +5,13 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.Threading;
 
+
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.DependencyInjection;
+
+using Jaeger;
+using Jaeger.Samplers;
 
 namespace WS_Server
 {
@@ -20,8 +24,10 @@ namespace WS_Server
             ConfigureServices(serviceCollection);
             var serviceProvider = serviceCollection.BuildServiceProvider();
             var logger = serviceProvider.GetService<ILogger<Server>>();
-            Server server = new Server("ws://0.0.0.0:8181", ImageSelection.Earth, @"../../../images", 64, serviceProvider.GetService<ILogger<Server>>());
+            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            var tracer = InitTracer("WS_Server", loggerFactory);
 
+            Server server = new Server("ws://0.0.0.0:8181", ImageSelection.Earth, @"../../../images", 64, serviceProvider.GetService<ILogger<Server>>(), tracer);
 
             server.WebSocketServer.Start(socket =>
             {
@@ -65,6 +71,21 @@ namespace WS_Server
         private static void ConfigureServices(IServiceCollection services)
         {
             services.AddLogging(configure => configure.AddConsole());
+
+        }
+        private static Tracer InitTracer(string serviceName, ILoggerFactory loggerFactory)
+        {
+            var samplerConfiguration = new Configuration.SamplerConfiguration(loggerFactory)
+                .WithType(ConstSampler.Type)
+                .WithParam(1);
+
+            var reporterConfiguration = new Configuration.ReporterConfiguration(loggerFactory)
+                .WithLogSpans(true);
+
+            return (Tracer)new Configuration(serviceName, loggerFactory)
+                .WithSampler(samplerConfiguration)
+                .WithReporter(reporterConfiguration)
+                .GetTracer();
         }
     }
 }
