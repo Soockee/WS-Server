@@ -12,6 +12,8 @@ using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.DependencyInjection;
 
 using OpenTracing.Util;
+using Jaeger;
+using Jaeger.Samplers;
 
 
 
@@ -23,6 +25,11 @@ namespace WS_Server
         Earth,
         Yoda,
         BabyYoda,
+    }
+    public enum ServerStatus
+    {
+        Exit,
+        Running,
     }
     class Server
     {
@@ -41,6 +48,7 @@ namespace WS_Server
         private Boolean selectNewImages = false;
         private CancellationTokenSource source;
         private CancellationToken token;
+        private ServerStatus serverStatus = ServerStatus.Running;
         public Server(String address, ImageSelection selection, String imagesBaseURL,
             int frameRate, ILogger<Server> logger, OpenTracing.ITracer tracer) 
         { 
@@ -61,69 +69,98 @@ namespace WS_Server
          */
         public void handleOnMassage(IWebSocketConnection socket,String message) 
         {
-            var span = _tracer.BuildSpan("handleOnMassage").Start();
-            _logger.LogInformation("Function: handleOnMassage(" + message+")");
-            if (message.Equals("exit"))
+            using (var scope = _tracer.BuildSpan("handleOnMassage").StartActive(true))
             {
-                socket.Close();
-            }
-            else if (message.Equals("earth"))
-            {
-                this.selection = ImageSelection.Earth;
-                this.selectNewImages = true;
-            }
-            else if (message.Equals("yoda"))
-            {
-                this.selection = ImageSelection.Yoda;
-                this.selectNewImages = true;
-            }
-            else if (message.Equals("babyyoda"))
-            {
-                this.selection = ImageSelection.BabyYoda;
-                this.selectNewImages = true;
-            }
-            if (this.selectNewImages)
-            {
-                this.allImages = getSelectedImageList(this.selection, this.imagesBaseURL);
-                this.sendImage.Wait();
-                this.selectNewImages = false;
-                this.taskCompleted = this.sendImage.IsCompleted;
-                this.sendImage = Task.Factory.StartNew(this.createSendDelayedFramesAction(), CancellationToken.None, TaskCreationOptions.DenyChildAttach,
-                TaskScheduler.Default);
+                _logger.LogInformation("Function: handleOnMassage(" + message+")");
+                if (message.Equals("exit"))
+                {
+                    socket.Close();
+                    serverStatus = ServerStatus.Exit;
 
+                }
+                else if (message.Equals("earth"))
+                {
+                    this.selection = ImageSelection.Earth;
+                    this.selectNewImages = true;
+                }
+                else if (message.Equals("yoda"))
+                {
+                    this.selection = ImageSelection.Yoda;
+                    this.selectNewImages = true;
+                }
+                else if (message.Equals("babyyoda"))
+                {
+                    this.selection = ImageSelection.BabyYoda;
+                    this.selectNewImages = true;
+                }
+                if (this.selectNewImages)
+                {
+                    this.allImages = getSelectedImageList(this.selection, this.imagesBaseURL);
+                    if (sendImage != null) 
+                    { 
+                        this.sendImage.Wait();
+                        this.taskCompleted = this.sendImage.IsCompleted;
+                    }
+                    this.selectNewImages = false;
+                    this.sendImage = Task.Factory.StartNew(this.createSendDelayedFramesAction(), CancellationToken.None, TaskCreationOptions.DenyChildAttach,
+                    TaskScheduler.Default);
+
+                }
+                scope.Span.Log(new Dictionary<string, object>
+                {
+                    [OpenTracing.LogFields.Event] = "ImageSelection",
+                    ["value"] = selection
+                });
+                Console.WriteLine(message);
             }
-            Console.WriteLine(message);
-            span.Finish();
         }
 
         /*
          * createSendDelayedFramesAction() returns an actions used by the task which iterates ONCE through the list of ImageData
          * and sends the image in binaryformat over the wire 
+         * sendDelayedIamges is an asynchrone Task which creates its own Thread
          */
         public Action createSendDelayedFramesAction() 
         {
-            Action sendDelayedIamges = () => {
+            Action sendDelayedImages = () => {
                 var enm = this.allImages.GetEnumerator();
-                while (enm.MoveNext())
+                using (var scope = _tracer.BuildSpan("start-animation-to-socket").StartActive(true))
                 {
-                    if (this.allSockets.Count == 0)
+                    scope.Span.SetTag("AnimationType", selection.ToString());
+                    _logger.LogInformation(Thread.GetCurrentProcessorId().ToString());
+                    while (enm.MoveNext())
                     {
-                        this.source.Cancel();
-                        Console.WriteLine("Cancelling at task: no sockets left");
-                        break;
+                        if (this.allSockets.Count == 0)
+                        {
+                            this.source.Cancel();
+                            Console.WriteLine("Cancelling at task: no sockets left");
+                            break;
+                        }
+                        else if (this.selectNewImages == true)
+                        {
+                            this.source.Cancel();
+                            Console.WriteLine("Cancelling at task: selectNewImages set by user");
+                            break;
+                        }
+                        this.allSockets.ForEach(s => sendFrame(s, enm.Current));
+                        Thread.Sleep(this.frameRate);
                     }
-                    else if (this.selectNewImages == true)
-                    {
-                        this.source.Cancel();
-                        Console.WriteLine("Cancelling at task: selectNewImages set by user");
-                        break;
-                    }
-                    this.allSockets.ForEach(s => s.Send(enm.Current.getImage()));
-                    Thread.Sleep(this.frameRate);
                 }
             };
-            return sendDelayedIamges;
+            return sendDelayedImages;
         }
+
+        private void sendFrame(IWebSocketConnection ws , ImageData imagedata) 
+        {
+            using (var scope = _tracer.BuildSpan("send-frame").StartActive(true)) {
+                scope.Span.Log(new Dictionary<string, object>
+                {
+                    [OpenTracing.LogFields.Event] = "SendFrame",
+                    ["frame-name"] = imagedata.getFileName()
+                });
+                ws.Send(imagedata.getImage());
+            }
+        }  
 
         /*
          * getSelectedImageList() Returns List of Imagedata based on Selection. imagesBaseURL is used as searchpath. imagesBaseURL is Runtimedependent
@@ -161,6 +198,7 @@ namespace WS_Server
         public List<IWebSocketConnection> AllSockets { get { return allSockets; } }
         public Task SendImage { get { return sendImage; } set { sendImage = value; } }
         public CancellationToken Token { get { return token; } set { token = value; } }
+        public ServerStatus ServerStatus { get { return serverStatus; } }
 
     }
 }

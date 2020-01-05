@@ -28,7 +28,7 @@ namespace WS_Server
             // jaeger tracer: Service name is used to identifiy the trace in the UI, loggerFactory as loggingframework
             var tracer = InitTracer("WS_Server", loggerFactory);
 
-            Server server = new Server("ws://0.0.0.0:8181", ImageSelection.Earth, @"../../../images", 64, serviceProvider.GetService<ILogger<Server>>(), tracer);
+            Server server = new Server("ws://0.0.0.0:8181", ImageSelection.Earth, @"../../../images", 31, serviceProvider.GetService<ILogger<Server>>(), tracer);
 
 
             /**
@@ -38,42 +38,60 @@ namespace WS_Server
              *          Starts the task, which sis responsible for sending frames to the client
              *          updates taskstatus
             */
-            server.WebSocketServer.Start(socket =>
-            {
-                socket.OnOpen = () =>
-                {
-                    Console.WriteLine("Open!");
-                    server.AllSockets.Add(socket);
-                    if (server.SendImage == null)
-                    {
-                        server.SendImage = Task.Factory.StartNew(server.createSendDelayedFramesAction(), server.Token, TaskCreationOptions.DenyChildAttach,
-                            TaskScheduler.Default);
-                        server.IsTaskCompleted = server.SendImage.IsCompleted;
-                    }
-                };
-                socket.OnClose = () =>
-                {
-                    Console.WriteLine("Close!");
-                    server.AllSockets.Remove(socket);
-                };
-                socket.OnMessage = message =>
-                {
-                    server.handleOnMassage(socket, message);
-                };
-            });
+            
+            Run(server, tracer);
+            tracer.Dispose();
+        }
 
-            while (true)
+        private static void Run(Server server, Tracer tracer) 
+        {
+            using (var Mainscope = tracer.BuildSpan("RunServer").StartActive(true))
             {
-                if (server.AllSockets.Count > 0 && server.IsTaskCompleted)
+                server.WebSocketServer.Start(socket =>
                 {
-                    server.SendImage = Task.Factory.StartNew(server.createSendDelayedFramesAction(), CancellationToken.None, TaskCreationOptions.DenyChildAttach,
-                        TaskScheduler.Default);
-                }
-                if (server.SendImage != null)
+                    socket.OnOpen = () =>
+                    {
+                        using (var scope = tracer.BuildSpan("Open-Connection").StartActive(true))
+                        {
+                            Console.WriteLine("Open!");
+                            server.AllSockets.Add(socket);
+                        /*if (server.SendImage == null)
+                        {
+                            server.SendImage = Task.Factory.StartNew(server.createSendDelayedFramesAction(), server.Token, TaskCreationOptions.DenyChildAttach,
+                                TaskScheduler.Default);
+                            server.IsTaskCompleted = server.SendImage.IsCompleted;
+                        }*/
+                        }
+                    };
+                    socket.OnClose = () =>
+                    {
+                        using (var scope = tracer.BuildSpan("Close-Connection").StartActive(true))
+                        {
+                            Console.WriteLine("Close!");
+                            server.AllSockets.Remove(socket);
+                        }
+                    };
+                    socket.OnMessage = message =>
+                    {
+                        server.handleOnMassage(socket, message);
+                    };
+                });
+                while (true)
                 {
-                    server.setTaskCompleted(server.SendImage.IsCompleted);
+                    if (server.AllSockets.Count > 0 && server.IsTaskCompleted)
+                    {
+                        server.SendImage = Task.Factory.StartNew(server.createSendDelayedFramesAction(), CancellationToken.None, TaskCreationOptions.DenyChildAttach,
+                            TaskScheduler.Default);
+                    }
+                    if (server.SendImage != null)
+                    {
+                        server.setTaskCompleted(server.SendImage.IsCompleted);
+                    }
+                    if (server.ServerStatus == ServerStatus.Exit && server.AllSockets.Count == 0 && server.IsTaskCompleted)
+                    {
+                        break;
+                    }
                 }
-                //input = Console.ReadLine();
             }
         }
         /**
