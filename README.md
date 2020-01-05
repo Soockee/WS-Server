@@ -7,8 +7,8 @@
 
 ## Animationtypes:
 Send following String to server to start animation
-* Yoda
-* Babyyoda
+* yoda
+* babyyoda
 * earth
 ## Closing Connection
 * Send "exit" as input 
