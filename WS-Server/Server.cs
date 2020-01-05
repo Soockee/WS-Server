@@ -26,11 +26,6 @@ namespace WS_Server
         Yoda,
         BabyYoda,
     }
-    public enum ServerStatus
-    {
-        Exit,
-        Running,
-    }
     class Server
     {
         private readonly ILogger<Server> _logger;
@@ -48,7 +43,6 @@ namespace WS_Server
         private Boolean selectNewImages = false;
         private CancellationTokenSource source;
         private CancellationToken token;
-        private ServerStatus serverStatus = ServerStatus.Running;
         public Server(String address, ImageSelection selection, String imagesBaseURL,
             int frameRate, ILogger<Server> logger, OpenTracing.ITracer tracer) 
         { 
@@ -75,7 +69,6 @@ namespace WS_Server
                 if (message.Equals("exit"))
                 {
                     socket.Close();
-                    serverStatus = ServerStatus.Exit;
 
                 }
                 else if (message.Equals("earth"))
@@ -198,7 +191,5 @@ namespace WS_Server
         public List<IWebSocketConnection> AllSockets { get { return allSockets; } }
         public Task SendImage { get { return sendImage; } set { sendImage = value; } }
         public CancellationToken Token { get { return token; } set { token = value; } }
-        public ServerStatus ServerStatus { get { return serverStatus; } }
-
     }
 }

@@ -87,7 +87,7 @@ namespace WS_Server
                     {
                         server.setTaskCompleted(server.SendImage.IsCompleted);
                     }
-                    if (server.ServerStatus == ServerStatus.Exit && server.AllSockets.Count == 0 && server.IsTaskCompleted)
+                    if (server.AllSockets.Count == 0 && server.IsTaskCompleted)
                     {
                         break;
                     }
